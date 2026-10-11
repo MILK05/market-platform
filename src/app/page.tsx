@@ -11,24 +11,43 @@ interface Market {
   location: string;
   status: string;
   contact_phone?: string;
+  max_booths?: number;
 }
 
 export default function HomePage() {
   const [marketList, setMarketList] = useState<Market[]>([]);
+  const [approvedCounts, setApprovedCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadMarkets() {
-      const { data } = await supabase
+    async function loadData() {
+      // 讀取檔期
+      const { data: markets } = await supabase
         .from("markets")
         .select("*")
         .order("created_at", { ascending: false });
-      if (data) {
-        setMarketList(data);
+
+      // 讀取所有已錄取的報名數量以計算進度
+      const { data: apps } = await supabase
+        .from("applications")
+        .select("market_id, status")
+        .eq("status", "approved");
+
+      if (markets) {
+        setMarketList(markets);
       }
+
+      if (apps) {
+        const counts: Record<string, number> = {};
+        apps.forEach((app) => {
+          counts[app.market_id] = (counts[app.market_id] || 0) + 1;
+        });
+        setApprovedCounts(counts);
+      }
+
       setLoading(false);
     }
-    loadMarkets();
+    loadData();
   }, []);
 
   return (
@@ -53,7 +72,9 @@ export default function HomePage() {
       <main className="max-w-6xl mx-auto px-4 pt-10">
         <div className="mb-8">
           <h1 className="text-3xl font-extrabold tracking-tight">即將登場市集檔期</h1>
-          <p className="text-sm text-neutral-500 mt-2">選擇欲報名的檔期，點入填寫線上品牌資料即可完成報名</p>
+          <p className="text-sm text-neutral-500 mt-2">
+            熱門場次名額流動快，建議盡早提交資料加 LINE 核對搶位！
+          </p>
         </div>
 
         {loading ? (
@@ -64,36 +85,79 @@ export default function HomePage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {marketList.map((m) => (
-              <div
-                key={m.id}
-                className="bg-white border rounded-2xl p-6 shadow-sm hover:shadow-md transition flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-0.5 rounded-full font-medium">
-                      {m.status || "招募中"}
-                    </span>
-                    <span className="text-xs text-neutral-400">代碼: {m.id}</span>
-                  </div>
-                  <h2 className="text-lg font-bold mb-3">{m.title}</h2>
-                  <div className="text-xs text-neutral-600 space-y-1.5 mb-6">
-                    <p><span className="text-neutral-400 font-medium">時間：</span>{m.date}</p>
-                    <p><span className="text-neutral-400 font-medium">地點：</span>{m.location}</p>
-                    {m.contact_phone && (
-                      <p><span className="text-neutral-400 font-medium">專員專線：</span>{m.contact_phone}</p>
-                    )}
-                  </div>
-                </div>
+            {marketList.map((m) => {
+              const max = m.max_booths && m.max_booths > 0 ? m.max_booths : 40;
+              const approved = approvedCounts[m.id] || 0;
+              const percent = Math.min(100, Math.round((approved / max) * 100));
+              const remaining = Math.max(0, max - approved);
 
-                <Link
-                  href={`/markets/${m.id}`}
-                  className="w-full text-center bg-neutral-900 text-white font-semibold py-2.5 rounded-xl hover:bg-neutral-800 transition text-xs block"
+              // 依比例判斷警示標籤
+              let badgeColor = "bg-emerald-50 text-emerald-700";
+              let badgeText = m.status || "招募中";
+
+              if (percent >= 100) {
+                badgeColor = "bg-red-50 text-red-600 font-bold";
+                badgeText = "🈵 已額滿";
+              } else if (percent >= 80) {
+                badgeColor = "bg-amber-100 text-amber-800 font-bold";
+                badgeText = `🔥 即將額滿 (剩 ${remaining} 席)`;
+              }
+
+              return (
+                <div
+                  key={m.id}
+                  className="bg-white border rounded-2xl p-6 shadow-xs hover:shadow-md transition flex flex-col justify-between"
                 >
-                  查看詳情並立即報名 →
-                </Link>
-              </div>
-            ))}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${badgeColor}`}>
+                        {badgeText}
+                      </span>
+                      <span className="text-xs text-neutral-400 font-mono">代碼: {m.id}</span>
+                    </div>
+
+                    <h2 className="text-lg font-bold mb-3">{m.title}</h2>
+
+                    <div className="text-xs text-neutral-600 space-y-1.5 mb-5">
+                      <p><span className="text-neutral-400 font-medium">時間：</span>{m.date}</p>
+                      <p><span className="text-neutral-400 font-medium">地點：</span>{m.location}</p>
+                      {m.contact_phone && (
+                        <p><span className="text-neutral-400 font-medium">專員專線：</span>{m.contact_phone}</p>
+                      )}
+                    </div>
+
+                    {/* 招募進度條 */}
+                    <div className="mb-6 p-3 bg-neutral-50 rounded-xl border border-neutral-100">
+                      <div className="flex justify-between items-center text-[11px] mb-1.5">
+                        <span className="font-semibold text-neutral-600">錄取席次進度</span>
+                        <span className="font-bold text-neutral-800">
+                          {approved} / {max} 攤 ({percent}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-neutral-200 h-2 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-500 ${
+                            percent >= 100
+                              ? "bg-red-500"
+                              : percent >= 80
+                              ? "bg-amber-500"
+                              : "bg-emerald-500"
+                          }`}
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <Link
+                    href={`/markets/${m.id}`}
+                    className="w-full text-center bg-neutral-900 text-white font-semibold py-2.5 rounded-xl hover:bg-neutral-800 transition text-xs block"
+                  >
+                    查看詳情並立即報名 →
+                  </Link>
+                </div>
+              );
+            })}
           </div>
         )}
       </main>

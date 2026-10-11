@@ -16,6 +16,7 @@ interface Market {
   fee_notice?: string;
   power_notice?: string;
   process_notice?: string;
+  max_booths?: number;
 }
 
 interface Application {
@@ -61,6 +62,7 @@ export default function AdminDashboardPage() {
     contact_phone: "0911316970",
     contact_line: "tawto",
     description: "",
+    max_booths: 40,
   });
 
   useEffect(() => {
@@ -133,13 +135,14 @@ export default function AdminDashboardPage() {
         contact_phone: newMarket.contact_phone,
         contact_line: newMarket.contact_line,
         description: newMarket.description,
+        max_booths: Number(newMarket.max_booths) || 40,
       },
     ]);
     if (error) {
       alert("新增檔期失敗：" + error.message);
     } else {
       setShowAddMarket(false);
-      setNewMarket({ id: "", title: "", date: "", location: "", status: "招募中", contact_phone: "0911316970", contact_line: "tawto", description: "" });
+      setNewMarket({ id: "", title: "", date: "", location: "", status: "招募中", contact_phone: "0911316970", contact_line: "tawto", description: "", max_booths: 40 });
       fetchInitialData();
     }
   };
@@ -162,6 +165,7 @@ export default function AdminDashboardPage() {
         fee_notice: editingMarket.fee_notice,
         power_notice: editingMarket.power_notice,
         process_notice: editingMarket.process_notice,
+        max_booths: Number(editingMarket.max_booths) || 40,
       })
       .eq("id", editingMarket.id);
 
@@ -252,6 +256,11 @@ export default function AdminDashboardPage() {
 
   const currentSelectedMarket = markets.find((m) => m.id === selectedMarketId);
 
+  // 計算每檔已錄取數
+  const getApprovedCount = (marketId: string) => {
+    return applications.filter((a) => a.market_id === marketId && a.status === "approved").length;
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-neutral-100 flex items-center justify-center p-4">
@@ -333,27 +342,34 @@ export default function AdminDashboardPage() {
             >
               全部檔期
             </button>
-            {markets.map((m) => (
-              <div key={m.id} className="relative group flex items-center">
-                <button
-                  onClick={() => setSelectedMarketId(m.id)}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
-                    selectedMarketId === m.id
-                      ? "bg-neutral-900 text-white"
-                      : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                  }`}
-                >
-                  {m.title}
-                </button>
-                <button
-                  onClick={() => handleDeleteMarket(m.id, m.title)}
-                  title="刪除此檔期"
-                  className="hidden group-hover:inline-block ml-1 text-xs text-red-500 hover:text-red-700 font-bold"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
+            {markets.map((m) => {
+              const max = m.max_booths || 40;
+              const approved = getApprovedCount(m.id);
+              return (
+                <div key={m.id} className="relative group flex items-center">
+                  <button
+                    onClick={() => setSelectedMarketId(m.id)}
+                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 ${
+                      selectedMarketId === m.id
+                        ? "bg-neutral-900 text-white"
+                        : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                    }`}
+                  >
+                    <span>{m.title}</span>
+                    <span className="text-[10px] opacity-75">
+                      ({approved}/{max})
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteMarket(m.id, m.title)}
+                    title="刪除此檔期"
+                    className="hidden group-hover:inline-block ml-1 text-xs text-red-500 hover:text-red-700 font-bold"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -362,7 +378,7 @@ export default function AdminDashboardPage() {
                 onClick={() => setEditingMarket(currentSelectedMarket)}
                 className="text-xs bg-amber-500 text-white font-semibold px-3.5 py-2 rounded-xl hover:bg-amber-600 transition flex items-center gap-1 shadow-xs"
               >
-                ✏️ 編輯當前檔期內容
+                ✏️ 編輯當前檔期內容與上限
               </button>
             )}
             <button
@@ -535,7 +551,7 @@ export default function AdminDashboardPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border my-8">
             <div className="flex items-center justify-between mb-4 border-b pb-3">
-              <h2 className="text-base font-bold">✏️ 編輯檔期展示內容（代碼：{editingMarket.id}）</h2>
+              <h2 className="text-base font-bold">✏️ 編輯檔期展示內容與上限（代碼：{editingMarket.id}）</h2>
               <button
                 onClick={() => setEditingMarket(null)}
                 className="text-neutral-400 hover:text-neutral-700 text-lg font-bold"
@@ -545,8 +561,8 @@ export default function AdminDashboardPage() {
             </div>
 
             <form onSubmit={handleSaveEditMarket} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2">
                   <label className="block font-semibold mb-1">檔期主標題 *</label>
                   <input
                     type="text"
@@ -557,7 +573,21 @@ export default function AdminDashboardPage() {
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1">狀態標籤</label>
+                  <label className="block font-semibold mb-1">預計招募攤位上限 (攤) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={editingMarket.max_booths || 40}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, max_booths: Number(e.target.value) })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">手動狀態覆蓋</label>
                   <select
                     value={editingMarket.status}
                     onChange={(e) => setEditingMarket({ ...editingMarket, status: e.target.value })}
@@ -569,9 +599,6 @@ export default function AdminDashboardPage() {
                     <option value="已截止">已截止</option>
                   </select>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">活動時間</label>
                   <input
@@ -581,6 +608,9 @@ export default function AdminDashboardPage() {
                     className="w-full border rounded-xl px-3 py-2 text-xs"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">活動地點</label>
                   <input
@@ -590,9 +620,6 @@ export default function AdminDashboardPage() {
                     className="w-full border rounded-xl px-3 py-2 text-xs"
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">主辦聯絡電話</label>
                   <input
@@ -691,16 +718,28 @@ export default function AdminDashboardPage() {
                   className="w-full border rounded-xl px-3 py-2 text-xs"
                 />
               </div>
-              <div>
-                <label className="block font-semibold mb-1">網址代碼 (ID) * 英文或數字無空格</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="如：nye-2026 或 002"
-                  value={newMarket.id}
-                  onChange={(e) => setNewMarket({ ...newMarket, id: e.target.value })}
-                  className="w-full border rounded-xl px-3 py-2 text-xs"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">網址代碼 (ID) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="如：002"
+                    value={newMarket.id}
+                    onChange={(e) => setNewMarket({ ...newMarket, id: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">攤位上限 (預設 40)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newMarket.max_booths}
+                    onChange={(e) => setNewMarket({ ...newMarket, max_booths: Number(e.target.value) })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
