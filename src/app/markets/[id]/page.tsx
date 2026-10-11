@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
@@ -17,7 +17,7 @@ interface Market {
   description?: string;
 }
 
-export default function MarketDetailPage() {
+function MarketDetailContent() {
   const params = useParams();
   const id = typeof params?.id === "string" ? params.id : Array.isArray(params?.id) ? params.id[0] : "";
 
@@ -137,5 +137,13 @@ export default function MarketDetailPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function MarketDetailPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-neutral-50 flex items-center justify-center text-xs text-neutral-400">載入中...</div>}>
+      <MarketDetailContent />
+    </Suspense>
   );
 }
