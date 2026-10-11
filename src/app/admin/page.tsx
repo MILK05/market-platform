@@ -104,7 +104,7 @@ export default function AdminDashboardPage() {
             <div>
               <input
                 type="password"
-                placeholder="輸入管理密碼 (預設: admin888)"
+                placeholder="輸入管理密碼 "
                 value={passwordInput}
                 onChange={(e) => {
                   setPasswordInput(e.target.value);
