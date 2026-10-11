@@ -4,6 +4,8 @@ import { useState, use, Suspense } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
+export const instant = false;
+
 const MARKET_DATA = {
   id: "market-20261024",
   title: "樂天桃園棒球場｜野餐趴市集",
@@ -26,7 +28,10 @@ const MARKET_DATA = {
     "本次活動於樂天桃園棒球場內舉辦，活動期間開放球迷進入球場紅土區及草皮區野餐，同類型往年活動曾吸引逾 3,000 名球迷參與！限定招募 20 台風格餐車與優質文創手作品牌。",
 };
 
-function MarketDetailContent({ marketId }: { marketId: string }) {
+function MarketDetailInner({ paramsPromise }: { paramsPromise: Promise<{ id: string }> }) {
+  const params = use(paramsPromise);
+  const marketId = params?.id || "market-20261024";
+
   const [formData, setFormData] = useState({
     brandName: "",
     contactName: "",
@@ -229,10 +234,9 @@ export default function MarketDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const resolvedParams = use(params);
   return (
-    <Suspense fallback={<div className="p-10 text-center">載入中...</div>}>
-      <MarketDetailContent marketId={resolvedParams.id} />
+    <Suspense fallback={<div className="p-10 text-center text-sm text-neutral-500">載入頁面中...</div>}>
+      <MarketDetailInner paramsPromise={params} />
     </Suspense>
   );
 }
