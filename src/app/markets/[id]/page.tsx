@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -49,7 +51,7 @@ export default function MarketDetailPage() {
     try {
       const { error } = await supabase.from("applications").insert([
         {
-          market_id: String(params.id),
+          market_id: String(params?.id || ""),
           brand_name: formData.brandName,
           contact_name: formData.contactName,
           phone: formData.phone,
@@ -79,7 +81,7 @@ export default function MarketDetailPage() {
           <Link href="/" className="text-sm font-semibold text-neutral-700 hover:text-black">
             ← 返回市集列表
           </Link>
-          <span className="text-sm text-neutral-500">場次代碼：{params.id}</span>
+          <span className="text-sm text-neutral-500">場次代碼：{params?.id}</span>
         </div>
       </header>
 
