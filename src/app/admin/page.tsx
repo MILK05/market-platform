@@ -31,7 +31,7 @@ interface Application {
   admin_notes?: string;
 }
 
-const ADMIN_SECRET = "admin888";
+const ADMIN_SECRET = "0000";
 
 export default function AdminDashboardPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
