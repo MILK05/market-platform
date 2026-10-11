@@ -32,7 +32,7 @@ interface Application {
   products?: string;
   plan_type: string;
   equipment_needs: string;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "waitlist";
   admin_notes?: string;
 }
 
@@ -104,7 +104,7 @@ export default function AdminDashboardPage() {
     setLoading(false);
   };
 
-  const updateStatus = async (id: string, newStatus: "approved" | "rejected") => {
+  const updateStatus = async (id: string, newStatus: "approved" | "rejected" | "waitlist") => {
     const { error } = await supabase.from("applications").update({ status: newStatus }).eq("id", id);
     if (error) {
       alert("更新失敗：" + error.message);
@@ -118,7 +118,6 @@ export default function AdminDashboardPage() {
     setApplications((prev) => prev.map((app) => (app.id === id ? { ...app, admin_notes: notes } : app)));
   };
 
-  // 新增檔期
   const handleCreateMarket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMarket.title || !newMarket.id) {
@@ -147,7 +146,6 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // 儲存修改檔期
   const handleSaveEditMarket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMarket) return;
@@ -209,24 +207,37 @@ export default function AdminDashboardPage() {
       "方案規格",
       "設備需求/備註",
       "審核狀態",
+      "候補順位",
       "主辦方備忘錄",
     ];
 
-    const rows = dataToExport.map((app) => [
-      `"${new Date(app.created_at).toLocaleString("zh-TW")}"`,
-      `"${app.market_id}"`,
-      `"${app.category || ""}"`,
-      `"${(app.brand_name || "").replace(/"/g, '""')}"`,
-      `"${(app.products || "").replace(/"/g, '""')}"`,
-      `"${(app.contact_name || "").replace(/"/g, '""')}"`,
-      `"${app.phone}"`,
-      `"${app.line_id || ""}"`,
-      `"${app.line_name || ""}"`,
-      `"${app.plan_type || ""}"`,
-      `"${(app.equipment_needs || "").replace(/"/g, '""')}"`,
-      `"${app.status === "approved" ? "已通過" : app.status === "rejected" ? "已婉拒" : "待審核"}"`,
-      `"${(app.admin_notes || "").replace(/"/g, '""')}"`,
-    ]);
+    const rows = dataToExport.map((app) => {
+      const waitOrder = app.status === "waitlist" ? getWaitlistOrder(app.id, app.market_id) : "";
+      return [
+        `"${new Date(app.created_at).toLocaleString("zh-TW")}"`,
+        `"${app.market_id}"`,
+        `"${app.category || ""}"`,
+        `"${(app.brand_name || "").replace(/"/g, '""')}"`,
+        `"${(app.products || "").replace(/"/g, '""')}"`,
+        `"${(app.contact_name || "").replace(/"/g, '""')}"`,
+        `"${app.phone}"`,
+        `"${app.line_id || ""}"`,
+        `"${app.line_name || ""}"`,
+        `"${app.plan_type || ""}"`,
+        `"${(app.equipment_needs || "").replace(/"/g, '""')}"`,
+        `"${
+          app.status === "approved"
+            ? "已通過"
+            : app.status === "rejected"
+            ? "已婉拒"
+            : app.status === "waitlist"
+            ? "候補中"
+            : "待審核"
+        }"`,
+        `"${waitOrder ? `第 ${waitOrder} 位` : ""}"`,
+        `"${(app.admin_notes || "").replace(/"/g, '""')}"`,
+      ];
+    });
 
     const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -238,6 +249,26 @@ export default function AdminDashboardPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // 計算特定檔期中，該筆候補資料是「第幾位候補」(按 created_at 建立時間由舊到新排序)
+  const getWaitlistOrder = (appId: string, marketId: string) => {
+    const marketWaitlists = applications
+      .filter((a) => a.market_id === marketId && a.status === "waitlist")
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    
+    const index = marketWaitlists.findIndex((a) => a.id === appId);
+    return index !== -1 ? index + 1 : null;
+  };
+
+  const getApprovedCount = (marketId: string) => {
+    return applications.filter((a) => a.market_id === marketId && a.status === "approved").length;
+  };
+
+  const getWaitlistCount = (marketId?: string) => {
+    return applications.filter(
+      (a) => (!marketId || marketId === "all" || a.market_id === marketId) && a.status === "waitlist"
+    ).length;
   };
 
   const filteredApps = applications.filter((app) => {
@@ -255,11 +286,6 @@ export default function AdminDashboardPage() {
   });
 
   const currentSelectedMarket = markets.find((m) => m.id === selectedMarketId);
-
-  // 計算每檔已錄取數
-  const getApprovedCount = (marketId: string) => {
-    return applications.filter((a) => a.market_id === marketId && a.status === "approved").length;
-  };
 
   if (!isAuthenticated) {
     return (
@@ -328,7 +354,7 @@ export default function AdminDashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
-        {/* 檔期切換、編輯與發布列 */}
+        {/* 檔期切換列 */}
         <div className="bg-white border rounded-2xl p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-neutral-500 mr-1">選擇檔期：</span>
@@ -345,6 +371,7 @@ export default function AdminDashboardPage() {
             {markets.map((m) => {
               const max = m.max_booths || 40;
               const approved = getApprovedCount(m.id);
+              const waitlist = getWaitlistCount(m.id);
               return (
                 <div key={m.id} className="relative group flex items-center">
                   <button
@@ -359,6 +386,11 @@ export default function AdminDashboardPage() {
                     <span className="text-[10px] opacity-75">
                       ({approved}/{max})
                     </span>
+                    {waitlist > 0 && (
+                      <span className="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                        候 {waitlist}
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => handleDeleteMarket(m.id, m.title)}
@@ -417,17 +449,23 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {["all", "pending", "approved", "rejected"].map((st) => (
+            {[
+              { id: "all", label: "全部狀態" },
+              { id: "pending", label: "待審核" },
+              { id: "waitlist", label: "候補中" },
+              { id: "approved", label: "已通過" },
+              { id: "rejected", label: "已婉拒" },
+            ].map((st) => (
               <button
-                key={st}
-                onClick={() => setFilter(st)}
+                key={st.id}
+                onClick={() => setFilter(st.id)}
                 className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
-                  filter === st
+                  filter === st.id
                     ? "bg-neutral-900 text-white"
                     : "bg-white border text-neutral-600 hover:bg-neutral-100"
                 }`}
               >
-                {st === "all" ? "全部狀態" : st === "pending" ? "待審核" : st === "approved" ? "已通過" : "已婉拒"}
+                {st.label}
               </button>
             ))}
             <span className="text-xs text-neutral-400 ml-2">共 {filteredApps.length} 筆</span>
@@ -439,7 +477,7 @@ export default function AdminDashboardPage() {
           <div className="text-center py-20 text-neutral-400 text-sm">正在載入檔期與名單資料...</div>
         ) : filteredApps.length === 0 ? (
           <div className="bg-white border rounded-2xl p-12 text-center text-neutral-400 text-sm">
-            找不到符合條件的報名名單
+            找不到符合條件的報名或候補名單
           </div>
         ) : (
           <div className="bg-white border rounded-2xl overflow-hidden shadow-xs">
@@ -453,92 +491,112 @@ export default function AdminDashboardPage() {
                     <th className="py-3 px-3">聯絡人 / 聯絡方式</th>
                     <th className="py-3 px-3">方案 / 設備需求</th>
                     <th className="py-3 px-3">審核備忘 (管理員備註)</th>
-                    <th className="py-3 px-3">狀態</th>
+                    <th className="py-3 px-3">狀態 / 順位</th>
                     <th className="py-3 px-3 text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
-                  {filteredApps.map((app) => (
-                    <tr key={app.id} className="hover:bg-neutral-50/50">
-                      <td className="py-3 px-3 text-neutral-400">
-                        <div>
-                          {new Date(app.created_at).toLocaleString("zh-TW", {
-                            month: "numeric",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </div>
-                        <div className="text-[10px] text-neutral-400 truncate max-w-[120px]">
-                          {markets.find((m) => m.id === app.market_id)?.title || app.market_id}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-neutral-900 text-sm">{app.brand_name}</div>
-                        {app.category && (
-                          <span className="inline-block mt-0.5 px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded text-[10px]">
-                            {app.category}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 text-neutral-700 max-w-[150px]">
-                        {app.products || "未填寫商品"}
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="font-semibold text-neutral-800">{app.contact_name}</div>
-                        <div className="text-neutral-500">{app.phone}</div>
-                        {(app.line_id || app.line_name) && (
-                          <div className="text-[11px] text-emerald-600 mt-0.5">
-                            LINE: {app.line_id} {app.line_name && `(${app.line_name})`}
+                  {filteredApps.map((app) => {
+                    const waitOrder = app.status === "waitlist" ? getWaitlistOrder(app.id, app.market_id) : null;
+                    return (
+                      <tr key={app.id} className="hover:bg-neutral-50/50">
+                        <td className="py-3 px-3 text-neutral-400">
+                          <div>
+                            {new Date(app.created_at).toLocaleString("zh-TW", {
+                              month: "numeric",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
                           </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 text-neutral-600 max-w-[150px]">
-                        <div className="font-medium text-neutral-800">{app.plan_type}</div>
-                        <div className="text-[11px] text-neutral-400 truncate">{app.equipment_needs || "無特別需求"}</div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <input
-                          type="text"
-                          defaultValue={app.admin_notes || ""}
-                          placeholder="點此填寫備註..."
-                          onBlur={(e) => handleUpdateNotes(app.id, e.target.value)}
-                          className="w-full text-xs border border-transparent hover:border-neutral-200 focus:border-neutral-400 focus:bg-white bg-transparent px-2 py-1 rounded"
-                        />
-                      </td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full font-medium ${
-                            app.status === "approved"
-                              ? "bg-emerald-50 text-emerald-700"
-                              : app.status === "rejected"
-                              ? "bg-red-50 text-red-700"
-                              : "bg-amber-50 text-amber-700"
-                          }`}
-                        >
-                          {app.status === "approved" ? "已通過" : app.status === "rejected" ? "已婉拒" : "待審核"}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="inline-flex gap-1">
-                          <button
-                            onClick={() => updateStatus(app.id, "approved")}
-                            disabled={app.status === "approved"}
-                            className="bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700 disabled:opacity-30"
-                          >
-                            通過
-                          </button>
-                          <button
-                            onClick={() => updateStatus(app.id, "rejected")}
-                            disabled={app.status === "rejected"}
-                            className="bg-neutral-200 text-neutral-700 px-2 py-1 rounded hover:bg-neutral-300 disabled:opacity-30"
-                          >
-                            婉拒
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                          <div className="text-[10px] text-neutral-400 truncate max-w-[120px]">
+                            {markets.find((m) => m.id === app.market_id)?.title || app.market_id}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-neutral-900 text-sm">{app.brand_name}</div>
+                          {app.category && (
+                            <span className="inline-block mt-0.5 px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded text-[10px]">
+                              {app.category}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-neutral-700 max-w-[150px]">
+                          {app.products || "未填寫商品"}
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-semibold text-neutral-800">{app.contact_name}</div>
+                          <div className="text-neutral-500">{app.phone}</div>
+                          {(app.line_id || app.line_name) && (
+                            <div className="text-[11px] text-emerald-600 mt-0.5">
+                              LINE: {app.line_id} {app.line_name && `(${app.line_name})`}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-neutral-600 max-w-[150px]">
+                          <div className="font-medium text-neutral-800">{app.plan_type}</div>
+                          <div className="text-[11px] text-neutral-400 truncate">{app.equipment_needs || "無特別需求"}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <input
+                            type="text"
+                            defaultValue={app.admin_notes || ""}
+                            placeholder="點此填寫備註..."
+                            onBlur={(e) => handleUpdateNotes(app.id, e.target.value)}
+                            className="w-full text-xs border border-transparent hover:border-neutral-200 focus:border-neutral-400 focus:bg-white bg-transparent px-2 py-1 rounded"
+                          />
+                        </td>
+                        <td className="py-3 px-3">
+                          {app.status === "approved" ? (
+                            <span className="px-2.5 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700">
+                              已通過
+                            </span>
+                          ) : app.status === "rejected" ? (
+                            <span className="px-2.5 py-0.5 rounded-full font-medium bg-red-50 text-red-700">
+                              已婉拒
+                            </span>
+                          ) : app.status === "waitlist" ? (
+                            <span className="px-2.5 py-1 rounded-full font-bold bg-purple-100 text-purple-800 border border-purple-200 inline-flex items-center gap-1">
+                              <span>候補 #{waitOrder}</span>
+                              {waitOrder === 1 && <span className="text-[10px] bg-purple-600 text-white px-1 rounded">首位</span>}
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700">
+                              待審核
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="inline-flex gap-1">
+                            <button
+                              onClick={() => updateStatus(app.id, "approved")}
+                              disabled={app.status === "approved"}
+                              className="bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700 disabled:opacity-30"
+                              title="通過並正式錄取"
+                            >
+                              錄取
+                            </button>
+                            <button
+                              onClick={() => updateStatus(app.id, "waitlist")}
+                              disabled={app.status === "waitlist"}
+                              className="bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 disabled:opacity-30"
+                              title="歸入候補隊列"
+                            >
+                              設候補
+                            </button>
+                            <button
+                              onClick={() => updateStatus(app.id, "rejected")}
+                              disabled={app.status === "rejected"}
+                              className="bg-neutral-200 text-neutral-700 px-2 py-1 rounded hover:bg-neutral-300 disabled:opacity-30"
+                              title="婉拒"
+                            >
+                              婉拒
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -546,7 +604,7 @@ export default function AdminDashboardPage() {
         )}
       </main>
 
-      {/* 編輯檔期視窗 */}
+      {/* 編輯檔期彈出視窗 */}
       {editingMarket && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border my-8">
