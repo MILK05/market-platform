@@ -12,6 +12,10 @@ interface Market {
   status: string;
   contact_phone?: string;
   contact_line?: string;
+  description?: string;
+  fee_notice?: string;
+  power_notice?: string;
+  process_notice?: string;
 }
 
 interface Application {
@@ -31,7 +35,7 @@ interface Application {
   admin_notes?: string;
 }
 
-const ADMIN_SECRET = "0000";
+const ADMIN_SECRET = "0911316970";
 
 export default function AdminDashboardPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -45,15 +49,18 @@ export default function AdminDashboardPage() {
   const [filter, setFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // 新增檔期 Modal 狀態
+  // 新增 / 編輯檔期狀態
   const [showAddMarket, setShowAddMarket] = useState(false);
+  const [editingMarket, setEditingMarket] = useState<Market | null>(null);
   const [newMarket, setNewMarket] = useState({
     id: "",
     title: "",
     date: "",
     location: "",
+    status: "招募中",
     contact_phone: "0911316970",
     contact_line: "tawto",
+    description: "",
   });
 
   useEffect(() => {
@@ -74,7 +81,7 @@ export default function AdminDashboardPage() {
       setAuthError("");
       fetchInitialData();
     } else {
-      setAuthError("管理員密碼錯誤，請重新輸入");
+      setAuthError("通行密碼錯誤");
     }
   };
 
@@ -86,18 +93,15 @@ export default function AdminDashboardPage() {
 
   const fetchInitialData = async () => {
     setLoading(true);
-    // 抓取所有檔期
     const { data: marketData } = await supabase.from("markets").select("*").order("created_at", { ascending: false });
     if (marketData) setMarkets(marketData);
 
-    // 抓取所有報名
     const { data: appData } = await supabase.from("applications").select("*").order("created_at", { ascending: false });
     if (appData) setApplications(appData);
 
     setLoading(false);
   };
 
-  // 審核狀態更新
   const updateStatus = async (id: string, newStatus: "approved" | "rejected") => {
     const { error } = await supabase.from("applications").update({ status: newStatus }).eq("id", id);
     if (error) {
@@ -107,7 +111,6 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // 儲存主辦方備忘錄
   const handleUpdateNotes = async (id: string, notes: string) => {
     await supabase.from("applications").update({ admin_notes: notes }).eq("id", id);
     setApplications((prev) => prev.map((app) => (app.id === id ? { ...app, admin_notes: notes } : app)));
@@ -126,23 +129,53 @@ export default function AdminDashboardPage() {
         title: newMarket.title.trim(),
         date: newMarket.date.trim(),
         location: newMarket.location.trim(),
-        status: "招募中",
+        status: newMarket.status || "招募中",
         contact_phone: newMarket.contact_phone,
         contact_line: newMarket.contact_line,
+        description: newMarket.description,
       },
     ]);
     if (error) {
       alert("新增檔期失敗：" + error.message);
     } else {
       setShowAddMarket(false);
-      setNewMarket({ id: "", title: "", date: "", location: "", contact_phone: "0911316970", contact_line: "tawto" });
+      setNewMarket({ id: "", title: "", date: "", location: "", status: "招募中", contact_phone: "0911316970", contact_line: "tawto", description: "" });
       fetchInitialData();
     }
   };
 
-  // 刪除檔期
+  // 儲存修改檔期
+  const handleSaveEditMarket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMarket) return;
+
+    const { error } = await supabase
+      .from("markets")
+      .update({
+        title: editingMarket.title,
+        date: editingMarket.date,
+        location: editingMarket.location,
+        status: editingMarket.status,
+        contact_phone: editingMarket.contact_phone,
+        contact_line: editingMarket.contact_line,
+        description: editingMarket.description,
+        fee_notice: editingMarket.fee_notice,
+        power_notice: editingMarket.power_notice,
+        process_notice: editingMarket.process_notice,
+      })
+      .eq("id", editingMarket.id);
+
+    if (error) {
+      alert("儲存修改失敗：" + error.message);
+    } else {
+      alert("檔期資料已成功更新！");
+      setEditingMarket(null);
+      fetchInitialData();
+    }
+  };
+
   const handleDeleteMarket = async (id: string, title: string) => {
-    if (!confirm(`確定要刪除「${title}」這個檔期嗎？這不會刪除已報名的資料。`)) return;
+    if (!confirm(`確定要刪除「${title}」這個檔期嗎？這不會刪除已報名的名單。`)) return;
     const { error } = await supabase.from("markets").delete().eq("id", id);
     if (error) {
       alert("刪除失敗：" + error.message);
@@ -152,7 +185,6 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // 匯出 CSV (支援繁體中文 Excel 不亂碼)
   const exportToCSV = () => {
     const dataToExport = filteredApps;
     if (dataToExport.length === 0) {
@@ -204,7 +236,6 @@ export default function AdminDashboardPage() {
     document.body.removeChild(link);
   };
 
-  // 篩選運算
   const filteredApps = applications.filter((app) => {
     const matchMarket = selectedMarketId === "all" || app.market_id === selectedMarketId;
     const matchStatus = filter === "all" || app.status === filter;
@@ -219,6 +250,8 @@ export default function AdminDashboardPage() {
     return matchMarket && matchStatus && matchSearch;
   });
 
+  const currentSelectedMarket = markets.find((m) => m.id === selectedMarketId);
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-neutral-100 flex items-center justify-center p-4">
@@ -228,13 +261,12 @@ export default function AdminDashboardPage() {
               🔒
             </div>
             <h1 className="text-xl font-extrabold text-neutral-900">後台管理員登入</h1>
-            <p className="text-xs text-neutral-500 mt-1">請輸入管理密碼以存取檔期與報名系統</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <input
               type="password"
-              placeholder="輸入管理密碼 (預設: admin888)"
+              placeholder="請輸入通行密碼"
               value={passwordInput}
               onChange={(e) => {
                 setPasswordInput(e.target.value);
@@ -287,8 +319,8 @@ export default function AdminDashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
-        {/* 檔期切換與新增檔期列 */}
-        <div className="bg-white border rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* 檔期切換、編輯與發布列 */}
+        <div className="bg-white border rounded-2xl p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-neutral-500 mr-1">選擇檔期：</span>
             <button
@@ -325,6 +357,14 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {currentSelectedMarket && (
+              <button
+                onClick={() => setEditingMarket(currentSelectedMarket)}
+                className="text-xs bg-amber-500 text-white font-semibold px-3.5 py-2 rounded-xl hover:bg-amber-600 transition flex items-center gap-1 shadow-xs"
+              >
+                ✏️ 編輯當前檔期內容
+              </button>
+            )}
             <button
               onClick={() => setShowAddMarket(true)}
               className="text-xs bg-emerald-600 text-white font-semibold px-3.5 py-2 rounded-xl hover:bg-emerald-700 transition flex items-center gap-1"
@@ -333,7 +373,7 @@ export default function AdminDashboardPage() {
             </button>
             <button
               onClick={exportToCSV}
-              className="text-xs bg-neutral-900 text-white font-semibold px-3.5 py-2 rounded-xl hover:bg-neutral-800 transition flex items-center gap-1 shadow-sm"
+              className="text-xs bg-neutral-900 text-white font-semibold px-3.5 py-2 rounded-xl hover:bg-neutral-800 transition flex items-center gap-1 shadow-xs"
             >
               📥 匯出當前名單 CSV
             </button>
@@ -386,7 +426,7 @@ export default function AdminDashboardPage() {
             找不到符合條件的報名名單
           </div>
         ) : (
-          <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
+          <div className="bg-white border rounded-2xl overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-neutral-50 border-b text-neutral-500">
@@ -490,9 +530,153 @@ export default function AdminDashboardPage() {
         )}
       </main>
 
+      {/* 編輯檔期視窗 */}
+      {editingMarket && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border my-8">
+            <div className="flex items-center justify-between mb-4 border-b pb-3">
+              <h2 className="text-base font-bold">✏️ 編輯檔期展示內容（代碼：{editingMarket.id}）</h2>
+              <button
+                onClick={() => setEditingMarket(null)}
+                className="text-neutral-400 hover:text-neutral-700 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditMarket} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">檔期主標題 *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingMarket.title}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, title: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">狀態標籤</label>
+                  <select
+                    value={editingMarket.status}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, status: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs bg-white"
+                  >
+                    <option value="招募中">招募中</option>
+                    <option value="熱烈招募中">熱烈招募中</option>
+                    <option value="即將額滿">即將額滿</option>
+                    <option value="已截止">已截止</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">活動時間</label>
+                  <input
+                    type="text"
+                    value={editingMarket.date || ""}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, date: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">活動地點</label>
+                  <input
+                    type="text"
+                    value={editingMarket.location || ""}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, location: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">主辦聯絡電話</label>
+                  <input
+                    type="text"
+                    value={editingMarket.contact_phone || ""}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, contact_phone: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">官方 LINE ID</label>
+                  <input
+                    type="text"
+                    value={editingMarket.contact_line || ""}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, contact_line: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">📢 檔期活動招商說明（黃色區塊）</label>
+                <textarea
+                  rows={3}
+                  value={editingMarket.description || ""}
+                  onChange={(e) => setEditingMarket({ ...editingMarket, description: e.target.value })}
+                  className="w-full border rounded-xl px-3 py-2 text-xs"
+                />
+              </div>
+
+              <div className="border-t pt-3 space-y-3">
+                <span className="font-bold text-neutral-800">📋 報名須知三個卡片內容（空白則使用系統預設）</span>
+                <div>
+                  <label className="block font-semibold mb-1 text-neutral-600">卡片 1：攤位費報價說明</label>
+                  <textarea
+                    rows={2}
+                    placeholder="預設：依【販售品類】與【車型規格】核定，填單初審後由大叔一對一線上報價。"
+                    value={editingMarket.fee_notice || ""}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, fee_notice: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1 text-neutral-600">卡片 2：用電與明火規範</label>
+                  <textarea
+                    rows={2}
+                    placeholder="預設：高耗電設備請於備註填明，並依場地規定決定是否需自備靜音發電機。"
+                    value={editingMarket.power_notice || ""}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, power_notice: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1 text-neutral-600">卡片 3：審核確認流程</label>
+                  <textarea
+                    rows={2}
+                    placeholder="預設：填寫下方表單送出 ➔ 加大叔 LINE 傳送核對訊息 ➔ 確認商品與位置方案 ➔ 完成正式錄取。"
+                    value={editingMarket.process_notice || ""}
+                    onChange={(e) => setEditingMarket({ ...editingMarket, process_notice: e.target.value })}
+                    className="w-full border rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setEditingMarket(null)}
+                  className="px-4 py-2 border rounded-xl hover:bg-neutral-50"
+                >
+                  取消
+                </button>
+                <button type="submit" className="px-5 py-2 bg-neutral-900 text-white font-semibold rounded-xl hover:bg-neutral-800">
+                  儲存修改
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 新增檔期彈出視窗 */}
       {showAddMarket && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border">
             <h2 className="text-base font-bold mb-4">發布新市集檔期</h2>
             <form onSubmit={handleCreateMarket} className="space-y-3 text-xs">
@@ -512,7 +696,7 @@ export default function AdminDashboardPage() {
                 <input
                   type="text"
                   required
-                  placeholder="如：nye-2026 或 market-pig"
+                  placeholder="如：nye-2026 或 002"
                   value={newMarket.id}
                   onChange={(e) => setNewMarket({ ...newMarket, id: e.target.value })}
                   className="w-full border rounded-xl px-3 py-2 text-xs"
@@ -539,6 +723,16 @@ export default function AdminDashboardPage() {
                     className="w-full border rounded-xl px-3 py-2 text-xs"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">招商說明</label>
+                <textarea
+                  rows={2}
+                  placeholder="填寫活動重點簡介..."
+                  value={newMarket.description}
+                  onChange={(e) => setNewMarket({ ...newMarket, description: e.target.value })}
+                  className="w-full border rounded-xl px-3 py-2 text-xs"
+                />
               </div>
               <div className="flex justify-end gap-2 pt-3">
                 <button
