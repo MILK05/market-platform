@@ -1,10 +1,7 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import { useState } from "react";
+import { useState, use, Suspense } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const MARKET_DATA = {
@@ -29,9 +26,7 @@ const MARKET_DATA = {
     "本次活動於樂天桃園棒球場內舉辦，活動期間開放球迷進入球場紅土區及草皮區野餐，同類型往年活動曾吸引逾 3,000 名球迷參與！限定招募 20 台風格餐車與優質文創手作品牌。",
 };
 
-export default function MarketDetailPage() {
-  const params = useParams();
-
+function MarketDetailContent({ marketId }: { marketId: string }) {
   const [formData, setFormData] = useState({
     brandName: "",
     contactName: "",
@@ -51,7 +46,7 @@ export default function MarketDetailPage() {
     try {
       const { error } = await supabase.from("applications").insert([
         {
-          market_id: String(params?.id || ""),
+          market_id: marketId,
           brand_name: formData.brandName,
           contact_name: formData.contactName,
           phone: formData.phone,
@@ -81,7 +76,7 @@ export default function MarketDetailPage() {
           <Link href="/" className="text-sm font-semibold text-neutral-700 hover:text-black">
             ← 返回市集列表
           </Link>
-          <span className="text-sm text-neutral-500">場次代碼：{params?.id}</span>
+          <span className="text-sm text-neutral-500">場次代碼：{marketId}</span>
         </div>
       </header>
 
@@ -226,5 +221,18 @@ export default function MarketDetailPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function MarketDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const resolvedParams = use(params);
+  return (
+    <Suspense fallback={<div className="p-10 text-center">載入中...</div>}>
+      <MarketDetailContent marketId={resolvedParams.id} />
+    </Suspense>
   );
 }
