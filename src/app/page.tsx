@@ -1,12 +1,35 @@
+﻿"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
-export const revalidate = 0;
+interface Market {
+  id: string;
+  title: string;
+  date: string;
+  location: string;
+  status: string;
+  contact_phone?: string;
+}
 
-export default async function HomePage() {
-  const { data: markets } = await supabase.from("markets").select("*").order("created_at", { ascending: false });
+export default function HomePage() {
+  const [marketList, setMarketList] = useState<Market[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const marketList = markets || [];
+  useEffect(() => {
+    async function loadMarkets() {
+      const { data } = await supabase
+        .from("markets")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (data) {
+        setMarketList(data);
+      }
+      setLoading(false);
+    }
+    loadMarkets();
+  }, []);
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 pb-20">
@@ -33,7 +56,9 @@ export default async function HomePage() {
           <p className="text-sm text-neutral-500 mt-2">選擇欲報名的檔期，點入填寫線上品牌資料即可完成報名</p>
         </div>
 
-        {marketList.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-20 text-neutral-400 text-sm">載入檔期中...</div>
+        ) : marketList.length === 0 ? (
           <div className="bg-white border rounded-2xl p-12 text-center text-neutral-400 text-sm">
             目前暫無開放中的檔期，請至管理後台新增！
           </div>
